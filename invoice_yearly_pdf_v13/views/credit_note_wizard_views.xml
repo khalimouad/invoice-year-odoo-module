@@ -11,15 +11,18 @@
                         <field name="year"/>
                     </group>
                     <group string="Print Template">
-                        <field name="report_id"
-                               options="{'no_create': True, 'no_open': True}"/>
+                        <field name="report_id" options="{'no_create': True, 'no_open': True}"/>
                     </group>
                 </group>
                 <footer>
                     <button name="action_generate_pdf"
-                            string="Generate &amp; Download PDF"
+                            string="Generate &amp; Download (small)"
                             type="object"
                             class="btn-primary"/>
+                    <button name="action_generate_pdf_background"
+                            string="Queue Generation (large / no timeout)"
+                            type="object"
+                            class="btn-secondary"/>
                     <button string="Cancel" class="btn-secondary" special="cancel"/>
                 </footer>
             </form>

@@ -17,16 +17,12 @@ class WizardCreditNoteYearlyPdf(models.TransientModel):
         required=True,
         default=lambda self: date.today().year - 1,
     )
-    include_paid = fields.Boolean(
-        string='Include Paid Credit Notes',
-        default=True,
-    )
+    include_paid = fields.Boolean(string='Include Paid Credit Notes', default=True)
     report_id = fields.Many2one(
         'ir.actions.report.xml',
         string='Print Template',
         required=True,
         domain="[('model', '=', 'account.invoice'), ('report_type', 'like', 'qweb')]",
-        help='Template used to render each credit note.',
     )
 
     @api.model
@@ -47,6 +43,19 @@ class WizardCreditNoteYearlyPdf(models.TransientModel):
         for rec in self:
             if rec.year < 2000 or rec.year > date.today().year + 1:
                 raise UserError(_('Please enter a valid year (2000 – %d).') % (date.today().year + 1))
+
+    def _get_or_create_record(self):
+        name = 'Credit Notes %d (Manual)' % self.year
+        record = self.env['invoice.yearly.pdf'].search([('name', '=', name)], limit=1)
+        if not record:
+            record = self.env['invoice.yearly.pdf'].create({
+                'name': name,
+                'year': self.year,
+                'invoice_type_filter': 'out_refund',
+            })
+        return record
+
+    # ── Synchronous (small datasets) ────────────────────────────────────────
 
     def action_generate_pdf(self):
         self.ensure_one()
@@ -78,16 +87,7 @@ class WizardCreditNoteYearlyPdf(models.TransientModel):
         merged = generator._merge_pdfs(pdf_parts)
         filename = 'CreditNotes_%d.pdf' % self.year
 
-        record_name = 'Credit Notes %d (Manual)' % self.year
-        record = self.env['invoice.yearly.pdf'].search(
-            [('name', '=', record_name)], limit=1
-        )
-        if not record:
-            record = self.env['invoice.yearly.pdf'].create({
-                'name': record_name,
-                'year': self.year,
-            })
-
+        record = self._get_or_create_record()
         if record.attachment_id:
             record.attachment_id.unlink()
 
@@ -100,9 +100,10 @@ class WizardCreditNoteYearlyPdf(models.TransientModel):
             'res_id': record.id,
             'mimetype': 'application/pdf',
         })
-
         record.write({
             'state': 'done',
+            'report_id': self.report_id.id,
+            'invoice_type_filter': 'out_refund',
             'attachment_id': attachment.id,
             'invoice_count': len(pdf_parts),
             'generated_on': fields.Datetime.now(),
@@ -112,4 +113,19 @@ class WizardCreditNoteYearlyPdf(models.TransientModel):
             'type': 'ir.actions.act_url',
             'url': '/web/content/%d?download=true' % attachment.id,
             'target': 'new',
+        }
+
+    # ── Background (large datasets) ─────────────────────────────────────────
+
+    def action_generate_pdf_background(self):
+        self.ensure_one()
+        record = self._get_or_create_record()
+        record.write({'report_id': self.report_id.id})
+        record.action_generate_background()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Generated PDFs History',
+            'res_model': 'invoice.yearly.pdf',
+            'view_mode': 'tree,form',
+            'target': 'current',
         }

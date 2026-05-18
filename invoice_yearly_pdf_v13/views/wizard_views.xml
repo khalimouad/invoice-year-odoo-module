@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- Wizard form -->
+    <!-- ── Invoice wizard ──────────────────────────────────────────────── -->
     <record id="view_wizard_invoice_yearly_pdf_form" model="ir.ui.view">
         <field name="name">wizard.invoice.yearly.pdf.form</field>
         <field name="model">wizard.invoice.yearly.pdf</field>
@@ -13,16 +13,18 @@
                         <field name="invoice_type"/>
                     </group>
                     <group string="Print Template">
-                        <field name="report_id"
-                               options="{'no_create': True, 'no_open': True}"
-                               help="Pick any template from the list — same options as the Print button on invoice list."/>
+                        <field name="report_id" options="{'no_create': True, 'no_open': True}"/>
                     </group>
                 </group>
                 <footer>
                     <button name="action_generate_pdf"
-                            string="Generate &amp; Download PDF"
+                            string="Generate &amp; Download (small)"
                             type="object"
                             class="btn-primary"/>
+                    <button name="action_generate_pdf_background"
+                            string="Queue Generation (large / no timeout)"
+                            type="object"
+                            class="btn-secondary"/>
                     <button string="Cancel" class="btn-secondary" special="cancel"/>
                 </footer>
             </form>
@@ -36,19 +38,24 @@
         <field name="target">new</field>
     </record>
 
-    <!-- History list -->
+    <!-- ── History list (download table) ──────────────────────────────── -->
     <record id="view_invoice_yearly_pdf_list" model="ir.ui.view">
         <field name="name">invoice.yearly.pdf.list</field>
         <field name="model">invoice.yearly.pdf</field>
         <field name="arch" type="xml">
-            <tree string="Yearly Invoice PDFs"
+            <tree string="Generated PDFs"
+                  decoration-info="state == 'running'"
                   decoration-danger="state == 'error'"
                   decoration-success="state == 'done'">
                 <field name="name"/>
                 <field name="year"/>
-                <field name="invoice_count"/>
+                <field name="invoice_type_filter"/>
+                <field name="invoice_count" string="# Docs"/>
                 <field name="generated_on"/>
                 <field name="state"/>
+                <field name="attachment_id" string="Download"
+                       widget="many2one"
+                       attrs="{'invisible': [('attachment_id', '=', False)]}"/>
             </tree>
         </field>
     </record>
@@ -57,28 +64,32 @@
         <field name="name">invoice.yearly.pdf.form</field>
         <field name="model">invoice.yearly.pdf</field>
         <field name="arch" type="xml">
-            <form string="Yearly Invoice PDF">
+            <form string="Generated PDF">
                 <header>
                     <button name="action_generate"
-                            string="Re-generate PDF"
+                            string="Re-generate"
                             type="object"
                             class="btn-primary"
-                            attrs="{'invisible': [('state', '=', 'draft')]}"/>
-                    <field name="state" widget="statusbar" statusbar_visible="draft,done,error"/>
+                            attrs="{'invisible': [('state', 'in', ('draft', 'running'))]}"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,running,done,error"/>
                 </header>
                 <sheet>
                     <group>
                         <group string="Settings">
                             <field name="name"/>
                             <field name="year"/>
+                            <field name="invoice_type_filter"/>
+                            <field name="report_id"/>
                         </group>
                         <group string="Result">
-                            <field name="invoice_count"/>
+                            <field name="invoice_count" string="Documents merged"/>
                             <field name="generated_on"/>
-                            <field name="attachment_id"/>
+                            <field name="attachment_id" string="Download PDF"
+                                   attrs="{'invisible': [('attachment_id', '=', False)]}"/>
                         </group>
                     </group>
-                    <group string="Error Details"
+                    <group string="Error / Notes"
                            attrs="{'invisible': [('error_message', '=', False)]}">
                         <field name="error_message" nolabel="1" colspan="2"/>
                     </group>
@@ -88,7 +99,7 @@
     </record>
 
     <record id="action_invoice_yearly_pdf" model="ir.actions.act_window">
-        <field name="name">Yearly Invoice PDFs</field>
+        <field name="name">Generated PDFs History</field>
         <field name="res_model">invoice.yearly.pdf</field>
         <field name="view_mode">tree,form</field>
     </record>

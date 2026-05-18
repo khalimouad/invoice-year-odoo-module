@@ -15,9 +15,18 @@ class InvoiceYearlyPdf(models.Model):
 
     name = fields.Char(string='Name', required=True)
     year = fields.Integer(string='Year', required=True)
+    # Stored so background job knows which template and types to use
+    report_id = fields.Many2one(
+        'ir.actions.report', string='Report Template', ondelete='set null')
+    invoice_type_filter = fields.Selection([
+        ('out_invoice', 'Customer Invoices'),
+        ('out_refund', 'Customer Credit Notes'),
+        ('both', 'Both'),
+    ], string='Invoice Type', default='both')
     attachment_id = fields.Many2one('ir.attachment', string='Generated PDF', readonly=True)
     state = fields.Selection([
         ('draft', 'Draft'),
+        ('running', 'Running'),
         ('done', 'Done'),
         ('error', 'Error'),
     ], default='draft', string='State', readonly=True)
@@ -29,25 +38,28 @@ class InvoiceYearlyPdf(models.Model):
     def _get_posted_invoices(self, year):
         date_from = date(year, 1, 1)
         date_to = date(year, 12, 31)
-        # Odoo 13: account.move field is `type` (renamed to `move_type` in v14)
+        # Odoo 13: field is `type` (renamed to `move_type` in v14)
+        inv_types = ('out_invoice', 'out_refund')
+        if self.invoice_type_filter and self.invoice_type_filter != 'both':
+            inv_types = (self.invoice_type_filter,)
         return self.env['account.move'].search([
-            ('type', 'in', ('out_invoice', 'out_refund')),
+            ('type', 'in', inv_types),
             ('state', '=', 'posted'),
             ('invoice_date', '>=', date_from),
             ('invoice_date', '<=', date_to),
         ], order='invoice_date asc, name asc')
 
-    @api.model
     def _render_invoice_pdf(self, invoice):
-        # Odoo 13: public method is `render_qweb_pdf` (got `_` prefix in v16)
-        report = self.env.ref('account.account_invoices')
+        # Use wizard-selected template if stored, else fall back to standard
+        report = self.report_id or self.env.ref('account.account_invoices')
+        # Odoo 13: render_qweb_pdf (renamed _render_qweb_pdf in v16)
         pdf, _ct = report.render_qweb_pdf(invoice.ids)
         return pdf
 
     @api.model
     def _merge_pdfs(self, pdf_list):
         try:
-            from pypdf import PdfWriter as _Merger        # pypdf (modern rename)
+            from pypdf import PdfWriter as _Merger        # pypdf (modern)
         except ImportError:
             try:
                 from PyPDF2 import PdfMerger as _Merger  # PyPDF2 >= 2.0
@@ -56,14 +68,11 @@ class InvoiceYearlyPdf(models.Model):
 
         writer = _Merger()
         for pdf_bytes in pdf_list:
-            # import_bookmarks=False skips outline parsing — wkhtmltopdf PDFs
-            # contain non-standard anchors (/__WKANCHOR_x) that PyPDF2 1.x
-            # cannot parse, causing PdfReadError.
+            # import_bookmarks=False avoids PdfReadError on wkhtmltopdf PDFs
+            # which contain non-standard anchors (/__WKANCHOR_x).
             try:
                 writer.append(io.BytesIO(pdf_bytes), import_bookmarks=False)
             except TypeError:
-                # pypdf renamed the param to import_outline; no kwarg needed
-                # since pypdf handles wkhtmltopdf PDFs without issue.
                 writer.append(io.BytesIO(pdf_bytes))
         out = io.BytesIO()
         writer.write(out)
@@ -94,7 +103,9 @@ class InvoiceYearlyPdf(models.Model):
                 raise ValueError('All %d invoices failed to render.' % len(invoices))
 
             merged_pdf = self._merge_pdfs(pdf_parts)
-            filename = 'Invoices_%d.pdf' % target_year
+            # Use a filename that reflects whether invoices or credit notes
+            doc_type = 'CreditNotes' if self.invoice_type_filter == 'out_refund' else 'Invoices'
+            filename = '%s_%d.pdf' % (doc_type, target_year)
 
             if self.attachment_id:
                 self.attachment_id.unlink()
@@ -108,7 +119,7 @@ class InvoiceYearlyPdf(models.Model):
                 'mimetype': 'application/pdf',
             })
 
-            msg = '%d invoice(s) merged.' % len(pdf_parts)
+            msg = '%d document(s) merged.' % len(pdf_parts)
             if failed:
                 msg += ' %d skipped due to render errors.' % failed
 
@@ -127,11 +138,35 @@ class InvoiceYearlyPdf(models.Model):
             self.write({'state': 'error', 'error_message': str(e)})
             return False
 
+    def action_generate_background(self):
+        """Schedule a one-shot ir.cron so generation runs outside the HTTP request."""
+        self.ensure_one()
+        self.write({'state': 'running'})
+        ir_model = self.env['ir.model'].search(
+            [('model', '=', self._name)], limit=1)
+        self.env['ir.cron'].sudo().create({
+            'name': 'Generate Yearly PDF: %s' % self.name,
+            'model_id': ir_model.id,
+            'state': 'code',
+            'code': 'model.browse([%d]).action_generate()' % self.id,
+            'interval_number': 1,
+            'interval_type': 'minutes',
+            'numbercall': 1,
+            'nextcall': fields.Datetime.now(),
+            'doall': False,
+            'active': True,
+            'priority': 5,
+        })
+
     @api.model
     def cron_generate_yearly_pdf(self):
         previous_year = date.today().year - 1
         record_name = 'Invoices %d (Auto)' % previous_year
         record = self.search([('name', '=', record_name)], limit=1)
         if not record:
-            record = self.create({'name': record_name, 'year': previous_year})
+            record = self.create({
+                'name': record_name,
+                'year': previous_year,
+                'invoice_type_filter': 'both',
+            })
         record.action_generate(year=previous_year)
