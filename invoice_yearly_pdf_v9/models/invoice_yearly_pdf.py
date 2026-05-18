@@ -60,7 +60,13 @@ class InvoiceYearlyPdf(models.Model):
 
         writer = _Merger()
         for pdf_bytes in pdf_list:
-            writer.append(io.BytesIO(pdf_bytes))
+            # import_bookmarks=False skips outline parsing — wkhtmltopdf PDFs
+            # contain non-standard anchors (/__WKANCHOR_x) that PyPDF2 1.x
+            # cannot parse, causing PdfReadError.
+            try:
+                writer.append(io.BytesIO(pdf_bytes), import_bookmarks=False)
+            except TypeError:
+                writer.append(io.BytesIO(pdf_bytes))
         out = io.BytesIO()
         writer.write(out)
         return out.getvalue()
