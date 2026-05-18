@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Root menu under Accounting -->
+    <menuitem id="menu_invoice_yearly_pdf_root"
+              name="Yearly PDF Export"
+              parent="account.menu_finance"
+              sequence="99"/>
+
+    <menuitem id="menu_invoice_yearly_pdf_wizard"
+              name="Generate PDF for a Year"
+              parent="menu_invoice_yearly_pdf_root"
+              action="action_wizard_invoice_yearly_pdf"
+              sequence="10"/>
+
+    <menuitem id="menu_invoice_yearly_pdf_history"
+              name="Generated PDFs History"
+              parent="menu_invoice_yearly_pdf_root"
+              action="action_invoice_yearly_pdf"
+              sequence="20"/>
+</odoo>
