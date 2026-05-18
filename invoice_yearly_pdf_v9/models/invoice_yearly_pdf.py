@@ -349,6 +349,10 @@ class InvoiceYearlyPdf(models.Model):
             new_hash = subprocess.check_output(
                 ['git', '-C', repo_dir, 'rev-parse', '--short', 'HEAD'],
             ).decode().strip()
+            commit_msg = subprocess.check_output(
+                ['git', '-C', repo_dir, 'log', '-1', '--pretty=%s'],
+            ).decode().strip()
+            safe_msg = commit_msg.replace("'", '').replace('\\', '')[:120]
             for mod in ('invoice_yearly_pdf_v13', 'invoice_yearly_pdf_v9'):
                 mf = os.path.join(repo_dir, mod, '__manifest__.py')
                 if not os.path.exists(mf):
@@ -360,9 +364,14 @@ class InvoiceYearlyPdf(models.Model):
                     lambda m: m.group(1) + new_hash + m.group(2),
                     content,
                 )
+                content = re.sub(
+                    r"('summary'\s*:\s*')[^']*(')",
+                    lambda m: m.group(1) + safe_msg + m.group(2),
+                    content,
+                )
                 with open(mf, 'w') as f:
                     f.write(content)
-            _logger.info('[auto-update] Manifests updated to commit %s, restarting.', new_hash)
+            _logger.info('[auto-update] Deployed commit %s: %s', new_hash, safe_msg)
 
             subprocess.Popen(
                 ['/bin/sh', '-c', 'sleep 5 && sudo /usr/sbin/service odoo-server restart'],

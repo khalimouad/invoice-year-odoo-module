@@ -349,12 +349,18 @@ class InvoiceYearlyPdf(models.Model):
             subprocess.run(['git', '-C', repo_dir, 'pull', '--ff-only', '--quiet'],
                            check=True, capture_output=True, timeout=60)
 
-            # Write the new commit hash into each manifest's version field so the
-            # Odoo Apps page shows it immediately after restart (no upgrade needed).
+            # Write commit hash to version and commit subject to summary so the
+            # Odoo Apps page shows what changed immediately after restart.
             new_hash = subprocess.check_output(
                 ['git', '-C', repo_dir, 'rev-parse', '--short', 'HEAD'],
                 stderr=subprocess.DEVNULL,
             ).decode().strip()
+            commit_msg = subprocess.check_output(
+                ['git', '-C', repo_dir, 'log', '-1', '--pretty=%s'],
+                stderr=subprocess.DEVNULL,
+            ).decode().strip()
+            # Strip single quotes so the Python string literal stays valid
+            safe_msg = commit_msg.replace("'", '').replace('\\', '')[:120]
             for mod in ('invoice_yearly_pdf_v13', 'invoice_yearly_pdf_v9'):
                 mf = os.path.join(repo_dir, mod, '__manifest__.py')
                 if not os.path.exists(mf):
@@ -366,9 +372,14 @@ class InvoiceYearlyPdf(models.Model):
                     lambda m: m.group(1) + new_hash + m.group(2),
                     content,
                 )
+                content = re.sub(
+                    r"('summary'\s*:\s*')[^']*(')",
+                    lambda m: m.group(1) + safe_msg + m.group(2),
+                    content,
+                )
                 with open(mf, 'w') as f:
                     f.write(content)
-            _logger.info('[auto-update] Manifests updated to commit %s, restarting.', new_hash)
+            _logger.info('[auto-update] Deployed commit %s: %s', new_hash, safe_msg)
 
             # Detached so the cron transaction can commit before the service goes down
             subprocess.Popen(
