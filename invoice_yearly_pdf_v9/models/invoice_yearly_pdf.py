@@ -123,7 +123,11 @@ class InvoiceYearlyPdf(models.Model):
         """Render a recordset of invoices in one wkhtmltopdf call (identical to manual print)."""
         report_name = self.report_id.report_name if self.report_id else 'account.report_invoice'
         ICP = self.env['ir.config_parameter'].sudo()
-        base_url = ICP.get_param('report.url') or ICP.get_param('web.base.url')
+        base_url = ICP.get_param('report.url')
+        if not base_url:
+            import openerp
+            port = openerp.tools.config.get('http_port') or openerp.tools.config.get('xmlrpc_port') or 8069
+            base_url = 'http://127.0.0.1:%d' % port
         return self.env['report'].with_context(base_url=base_url).get_pdf(invoices, report_name)
 
     @api.model

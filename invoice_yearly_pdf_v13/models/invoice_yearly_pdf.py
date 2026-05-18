@@ -121,8 +121,15 @@ class InvoiceYearlyPdf(models.Model):
     def _render_batch_pdf(self, invoices):
         """Render a recordset of invoices in one wkhtmltopdf call (identical to manual print)."""
         report = self.report_id or self.env.ref('account.account_invoices')
+        # Use the local HTTP address so wkhtmltopdf can always reach the server.
+        # web.base.url is often an HTTPS external URL that the server itself cannot
+        # reach (NAT, self-signed cert) causing silent CSS loss in cron context.
         ICP = self.env['ir.config_parameter'].sudo()
-        base_url = ICP.get_param('report.url') or ICP.get_param('web.base.url')
+        base_url = ICP.get_param('report.url')
+        if not base_url:
+            import odoo
+            port = odoo.tools.config.get('http_port') or odoo.tools.config.get('xmlrpc_port') or 8069
+            base_url = 'http://127.0.0.1:%d' % port
         pdf, _ct = report.with_context(base_url=base_url).render_qweb_pdf(invoices.ids)
         return pdf
 
