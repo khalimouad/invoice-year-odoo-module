@@ -1,103 +1,88 @@
-# Invoice Yearly PDF Export — Odoo Module
+# Invoice Yearly PDF Export — Odoo Modules
 
-Generates a **single merged PDF** containing every posted invoice for a chosen fiscal year (January 1 – December 31) and stores it as an `ir.attachment`.
+Two independent modules — one per Odoo major version.
 
-Compatible with **Odoo 9** and **Odoo 13**.
+| Module folder | Target version |
+|---|---|
+| `invoice_yearly_pdf_v13/` | Odoo 13 (and 14/15/16 with minor adjustments) |
+| `invoice_yearly_pdf_v9/` | Odoo 9 |
 
 ---
 
 ## Features
 
-| Feature | Detail |
-|---|---|
-| Year picker | Choose any year via the wizard or let the cron handle it |
-| Invoice type | Customer Invoices, Credit Notes, or both |
-| QWeb template | Configurable report reference (default: `account.report_invoice`) |
-| Merging | Uses **pypdf** (or **PyPDF2** as fallback) to merge per-invoice PDFs |
-| Storage | Saved as `ir.attachment` on the `invoice.yearly.pdf` record |
-| Cron | Runs automatically on Jan 1st each year for the previous year |
+- **Year picker** — choose any year in the wizard
+- **Invoice type filter** — Customer Invoices, Credit Notes, or both
+- **Print template picker** — dropdown showing every QWeb report available for invoices (same list as the Print button on the invoice list)
+- **Merged PDF** — all matching invoices rendered individually then merged into a single PDF
+- **Attachment storage** — saved as `ir.attachment`, downloadable from the history view
+- **Cron** — runs automatically on January 1st each year for the previous year
 
 ---
 
 ## Installation
 
-### 1. Install the Python PDF library
+### 1 — Install the PDF merge library
 
+**Odoo 13 (Python 3)**
 ```bash
-pip install pypdf          # Odoo 13+ (Python 3)
-# or
-pip install PyPDF2         # Odoo 9 (Python 2/3)
+pip install pypdf
+# PyPDF2 works as fallback if pypdf is not available
 ```
 
-### 2. Copy the module
-
-```
-<odoo-addons-path>/
-└── invoice_yearly_pdf/
+**Odoo 9 (Python 2 or 3)**
+```bash
+pip install PyPDF2
 ```
 
-### 3. Activate
+### 2 — Copy the correct module to your addons path
 
 ```
-Odoo → Settings → Apps → search "Invoice Yearly PDF" → Install
+<your-addons>/
+├── invoice_yearly_pdf_v13/   ← for Odoo 13
+└── invoice_yearly_pdf_v9/    ← for Odoo 9
 ```
+
+### 3 — Install from the Apps menu
+
+Search for **"Invoice Yearly PDF"** and install.
 
 ---
 
 ## Usage
 
-### Manual generation (Wizard)
+### Manual — Wizard
 
-1. Go to **Accounting → Yearly PDF Export → Generate PDF for a Year**
-2. Pick the **Year**, **Invoice Type**, and optionally adjust the **QWeb Report Reference**
-3. Click **Generate & Download PDF** — the browser downloads the merged PDF immediately
+**Accounting → Yearly PDF Export → Generate PDF for a Year**
 
-### Automated cron
+| Field | Description |
+|---|---|
+| Year | Fiscal year to export (Jan 1 – Dec 31) |
+| Invoice Type | Customer Invoices / Credit Notes / Both |
+| Include Paid *(v9 only)* | Toggle to include paid invoices in addition to open ones |
+| Print Template | Dropdown of all QWeb report templates for invoices |
 
-The cron `Generate Yearly Invoice PDF` is installed and active by default.  
-It runs on **January 1st** each year and produces a PDF for the *previous* year.
+Click **Generate & Download PDF** → browser downloads the merged PDF immediately.
 
-To trigger it manually:
+### Automatic — Cron
 
-```
-Settings → Technical → Scheduled Actions → Generate Yearly Invoice PDF → Run Manually
-```
+The scheduled action **"Generate Yearly Invoice PDF"** runs on **January 1st** of every year and produces a PDF for the *previous* year using the standard invoice template.
+
+Trigger manually: `Settings → Technical → Scheduled Actions → Generate Yearly Invoice PDF → Run Manually`
 
 ### History
 
-All generated PDFs (manual + cron) are listed under:  
-**Accounting → Yearly PDF Export → Generated PDFs History**
+**Accounting → Yearly PDF Export → Generated PDFs History** — lists every generated PDF with its status and download link.
 
 ---
 
-## QWeb Report Reference
+## Key differences between versions
 
-| Odoo version | Default report ref |
-|---|---|
-| Odoo 13 | `account.report_invoice` |
-| Odoo 9  | `account.report_invoice_with_payments` |
-
-To use a **custom template**, enter its external ID in the wizard's *QWeb Report Reference* field.
-
----
-
-## File Structure
-
-```
-invoice_yearly_pdf/
-├── __manifest__.py
-├── __init__.py
-├── models/
-│   ├── __init__.py
-│   └── invoice_yearly_pdf.py   ← core logic + cron method
-├── wizard/
-│   ├── __init__.py
-│   └── wizard_invoice_yearly_pdf.py  ← user-facing wizard
-├── views/
-│   ├── wizard_views.xml
-│   └── menu.xml
-├── security/
-│   └── ir.model.access.csv
-└── data/
-    └── cron.xml
-```
+| | Odoo 13 module | Odoo 9 module |
+|---|---|---|
+| Invoice model | `account.move` | `account.invoice` |
+| Posted state | `state = 'posted'` | `state in ('open', 'paid')` |
+| Report model | `ir.actions.report` | `ir.actions.report.xml` |
+| Render API | `report._render_qweb_pdf()` | `env['report'].get_pdf()` |
+| XML root tag | `<odoo>` | `<openerp>` |
+| Attachment field | no `datas_fname` | requires `datas_fname` |

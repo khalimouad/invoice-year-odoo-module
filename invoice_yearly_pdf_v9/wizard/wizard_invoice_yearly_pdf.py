@@ -2,8 +2,10 @@
 import base64
 from datetime import date
 
-from odoo import api, fields, models, _
-from odoo.exceptions import UserError
+from openerp import api, fields, models, _
+from openerp.exceptions import UserError
+
+POSTED_STATES = ('open', 'paid')
 
 
 class WizardInvoiceYearlyPdf(models.TransientModel):
@@ -20,14 +22,31 @@ class WizardInvoiceYearlyPdf(models.TransientModel):
         ('out_refund', 'Customer Credit Notes'),
         ('both', 'Both'),
     ], string='Invoice Type', required=True, default='out_invoice')
-    report_ref = fields.Char(
-        string='QWeb Report Reference',
-        required=True,
-        default='account.report_invoice',
-        help='External ID of the QWeb report to use for rendering.\n'
-             'Odoo 13: account.report_invoice\n'
-             'Odoo 9:  account.report_invoice_with_payments',
+    include_paid = fields.Boolean(
+        string='Include Paid Invoices',
+        default=True,
     )
+
+    # Dynamically populated with all QWeb reports whose model is account.invoice
+    report_id = fields.Many2one(
+        'ir.actions.report.xml',   # Odoo 9 model name
+        string='Print Template',
+        required=True,
+        domain="[('model', '=', 'account.invoice'), ('report_type', 'like', 'qweb')]",
+        help='Choose a template from the list — same templates available in the invoice Print menu.',
+    )
+
+    @api.model
+    def default_get(self, fields_list):
+        res = super(WizardInvoiceYearlyPdf, self).default_get(fields_list)
+        # Pre-select the standard invoice with payments report if it exists
+        default_report = self.env['ir.actions.report.xml'].search([
+            ('report_name', 'like', 'account.report_invoice'),
+            ('model', '=', 'account.invoice'),
+        ], limit=1)
+        if default_report:
+            res['report_id'] = default_report.id
+        return res
 
     @api.constrains('year')
     def _check_year(self):
@@ -37,15 +56,13 @@ class WizardInvoiceYearlyPdf(models.TransientModel):
 
     def action_generate_pdf(self):
         self.ensure_one()
-        generator = self.env['invoice.yearly.pdf']
         invoices = self._fetch_invoices()
-
         if not invoices:
             raise UserError(_(
-                'No posted invoices found for the year %d with the selected type.'
+                'No posted invoices found for %d with the selected type.'
             ) % self.year)
 
-        # Render + merge
+        generator = self.env['invoice.yearly.pdf']
         pdf_parts = []
         for inv in invoices:
             try:
@@ -58,16 +75,12 @@ class WizardInvoiceYearlyPdf(models.TransientModel):
 
         merged = generator._merge_pdfs(pdf_parts)
         filename = 'Invoices_%d.pdf' % self.year
-        encoded = base64.b64encode(merged)
 
-        # Create a persistent record so the attachment is reachable later
         record_name = 'Invoices %d (Manual)' % self.year
-        existing = self.env['invoice.yearly.pdf'].search(
+        record = self.env['invoice.yearly.pdf'].search(
             [('name', '=', record_name)], limit=1
         )
-        if existing:
-            record = existing
-        else:
+        if not record:
             record = self.env['invoice.yearly.pdf'].create({
                 'name': record_name,
                 'year': self.year,
@@ -79,7 +92,8 @@ class WizardInvoiceYearlyPdf(models.TransientModel):
         attachment = self.env['ir.attachment'].create({
             'name': filename,
             'type': 'binary',
-            'datas': encoded,
+            'datas': base64.b64encode(merged),
+            'datas_fname': filename,
             'res_model': 'invoice.yearly.pdf',
             'res_id': record.id,
             'mimetype': 'application/pdf',
@@ -92,7 +106,6 @@ class WizardInvoiceYearlyPdf(models.TransientModel):
             'generated_on': fields.Datetime.now(),
         })
 
-        # Return an action to download the PDF immediately
         return {
             'type': 'ir.actions.act_url',
             'url': '/web/content/%d?download=true' % attachment.id,
@@ -100,42 +113,18 @@ class WizardInvoiceYearlyPdf(models.TransientModel):
         }
 
     def _fetch_invoices(self):
-        date_from = date(self.year, 1, 1)
-        date_to = date(self.year, 12, 31)
-
-        if self.invoice_type == 'both':
-            types = ('out_invoice', 'out_refund')
-        else:
-            types = (self.invoice_type,)
-
-        # Odoo 13
-        if hasattr(self.env['account.move'], 'move_type'):
-            return self.env['account.move'].search([
-                ('move_type', 'in', types),
-                ('state', '=', 'posted'),
-                ('invoice_date', '>=', date_from),
-                ('invoice_date', '<=', date_to),
-            ], order='invoice_date asc, name asc')
-
-        # Odoo 9
-        state_filter = 'open'  # posted invoices in Odoo 9
+        date_from = '%d-01-01' % self.year
+        date_to = '%d-12-31' % self.year
+        types = ('out_invoice', 'out_refund') if self.invoice_type == 'both' else (self.invoice_type,)
+        states = list(POSTED_STATES) if self.include_paid else ['open']
         return self.env['account.invoice'].search([
             ('type', 'in', types),
-            ('state', '=', state_filter),
-            ('date_invoice', '>=', fields.Date.to_string(date_from)),
-            ('date_invoice', '<=', fields.Date.to_string(date_to)),
+            ('state', 'in', states),
+            ('date_invoice', '>=', date_from),
+            ('date_invoice', '<=', date_to),
         ], order='date_invoice asc, number asc')
 
     def _render_pdf(self, invoice):
-        report_ref = self.report_ref or 'account.report_invoice'
-        try:
-            report = self.env.ref(report_ref)
-        except ValueError:
-            report = self.env.ref('account.report_invoice_with_payments')
-
-        if hasattr(report, '_render_qweb_pdf'):
-            pdf, _ = report._render_qweb_pdf(invoice.ids)
-            return pdf
-
-        pdf, _ = self.env['report'].get_pdf(invoice, report_ref)
+        # Odoo 9 uses env['report'].get_pdf with the report_name string
+        pdf, _ = self.env['report'].get_pdf(invoice, self.report_id.report_name)
         return pdf

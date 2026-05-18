@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- ─── Wizard: Generate PDF ────────────────────────────────────────── -->
+    <!-- Wizard form -->
     <record id="view_wizard_invoice_yearly_pdf_form" model="ir.ui.view">
         <field name="name">wizard.invoice.yearly.pdf.form</field>
         <field name="model">wizard.invoice.yearly.pdf</field>
@@ -12,8 +12,10 @@
                         <field name="year"/>
                         <field name="invoice_type"/>
                     </group>
-                    <group string="Rendering">
-                        <field name="report_ref"/>
+                    <group string="Print Template">
+                        <field name="report_id"
+                               options="{'no_create': True, 'no_open': True}"
+                               help="Pick any template from the list — same options as the Print button on invoice list."/>
                     </group>
                 </group>
                 <footer>
@@ -34,12 +36,14 @@
         <field name="target">new</field>
     </record>
 
-    <!-- ─── List view for stored results ───────────────────────────────── -->
+    <!-- History list -->
     <record id="view_invoice_yearly_pdf_list" model="ir.ui.view">
         <field name="name">invoice.yearly.pdf.list</field>
         <field name="model">invoice.yearly.pdf</field>
         <field name="arch" type="xml">
-            <tree string="Yearly Invoice PDFs" decoration-danger="state=='error'" decoration-success="state=='done'">
+            <tree string="Yearly Invoice PDFs"
+                  decoration-danger="state == 'error'"
+                  decoration-success="state == 'done'">
                 <field name="name"/>
                 <field name="year"/>
                 <field name="invoice_count"/>
@@ -71,10 +75,11 @@
                         <group string="Result">
                             <field name="invoice_count"/>
                             <field name="generated_on"/>
-                            <field name="attachment_id" widget="many2one_avatar"/>
+                            <field name="attachment_id"/>
                         </group>
                     </group>
-                    <group string="Error Details" attrs="{'invisible': [('error_message', '=', False)]}">
+                    <group string="Error Details"
+                           attrs="{'invisible': [('error_message', '=', False)]}">
                         <field name="error_message" nolabel="1" colspan="2"/>
                     </group>
                 </sheet>

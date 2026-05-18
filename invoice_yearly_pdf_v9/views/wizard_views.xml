@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<openerp>
+    <data>
+
+        <!-- Wizard form -->
+        <record id="view_wizard_invoice_yearly_pdf_form" model="ir.ui.view">
+            <field name="name">wizard.invoice.yearly.pdf.form</field>
+            <field name="model">wizard.invoice.yearly.pdf</field>
+            <field name="arch" type="xml">
+                <form string="Generate Yearly Invoice PDF">
+                    <group>
+                        <group string="Filter">
+                            <field name="year"/>
+                            <field name="invoice_type"/>
+                            <field name="include_paid"/>
+                        </group>
+                        <group string="Print Template">
+                            <field name="report_id"
+                                   options="{'no_create': True, 'no_open': True}"
+                                   help="Pick any template from the list — same options as the Print button on invoice list."/>
+                        </group>
+                    </group>
+                    <footer>
+                        <button name="action_generate_pdf"
+                                string="Generate &amp; Download PDF"
+                                type="object"
+                                class="btn-primary"/>
+                        <button string="Cancel" class="btn-secondary" special="cancel"/>
+                    </footer>
+                </form>
+            </field>
+        </record>
+
+        <record id="action_wizard_invoice_yearly_pdf" model="ir.actions.act_window">
+            <field name="name">Generate Yearly Invoice PDF</field>
+            <field name="res_model">wizard.invoice.yearly.pdf</field>
+            <field name="view_type">form</field>
+            <field name="view_mode">form</field>
+            <field name="target">new</field>
+        </record>
+
+        <!-- History list -->
+        <record id="view_invoice_yearly_pdf_list" model="ir.ui.view">
+            <field name="name">invoice.yearly.pdf.list</field>
+            <field name="model">invoice.yearly.pdf</field>
+            <field name="arch" type="xml">
+                <tree string="Yearly Invoice PDFs"
+                      decoration-danger="state == 'error'"
+                      decoration-success="state == 'done'">
+                    <field name="name"/>
+                    <field name="year"/>
+                    <field name="invoice_count"/>
+                    <field name="generated_on"/>
+                    <field name="state"/>
+                </tree>
+            </field>
+        </record>
+
+        <record id="view_invoice_yearly_pdf_form" model="ir.ui.view">
+            <field name="name">invoice.yearly.pdf.form</field>
+            <field name="model">invoice.yearly.pdf</field>
+            <field name="arch" type="xml">
+                <form string="Yearly Invoice PDF">
+                    <header>
+                        <button name="action_generate"
+                                string="Re-generate PDF"
+                                type="object"
+                                class="btn-primary"
+                                attrs="{'invisible': [('state', '=', 'draft')]}"/>
+                        <field name="state" widget="statusbar" statusbar_visible="draft,done,error"/>
+                    </header>
+                    <sheet>
+                        <group>
+                            <group string="Settings">
+                                <field name="name"/>
+                                <field name="year"/>
+                            </group>
+                            <group string="Result">
+                                <field name="invoice_count"/>
+                                <field name="generated_on"/>
+                                <field name="attachment_id"/>
+                            </group>
+                        </group>
+                        <group string="Error Details"
+                               attrs="{'invisible': [('error_message', '=', False)]}">
+                            <field name="error_message" nolabel="1" colspan="2"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <record id="action_invoice_yearly_pdf" model="ir.actions.act_window">
+            <field name="name">Yearly Invoice PDFs</field>
+            <field name="res_model">invoice.yearly.pdf</field>
+            <field name="view_type">list</field>
+            <field name="view_mode">tree,form</field>
+        </record>
+
+    </data>
+</openerp>

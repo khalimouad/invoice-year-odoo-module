@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Root menu under Accounting -->
     <menuitem id="menu_invoice_yearly_pdf_root"
               name="Yearly PDF Export"
               parent="account.menu_finance"
