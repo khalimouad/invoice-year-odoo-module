@@ -323,24 +323,50 @@ class InvoiceYearlyPdf(models.Model):
         Requires a passwordless sudoers entry for the odoo system user:
             odoo ALL=(ALL) NOPASSWD: /usr/sbin/service odoo-server restart
         """
+        import re
         module_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         repo_dir = os.path.dirname(module_dir)
         if not os.path.isdir(os.path.join(repo_dir, '.git')):
             _logger.warning('[auto-update] %s is not a git repo, skipping.', repo_dir)
             return
         try:
+            # Reset any manifest edits from the previous run so pull never conflicts
+            for mod in ('invoice_yearly_pdf_v13', 'invoice_yearly_pdf_v9'):
+                mf = os.path.join(repo_dir, mod, '__manifest__.py')
+                if os.path.exists(mf):
+                    subprocess.call(['git', '-C', repo_dir, 'checkout', '--', mf])
+
             subprocess.check_call(['git', '-C', repo_dir, 'fetch', '--quiet'])
             ahead = int(subprocess.check_output(
                 ['git', '-C', repo_dir, 'rev-list', '--count', 'HEAD..@{u}']
             ).strip() or '0')
             if ahead == 0:
                 return
+
             _logger.info('[auto-update] %d new commit(s) on origin, pulling...', ahead)
             subprocess.check_call(['git', '-C', repo_dir, 'pull', '--ff-only', '--quiet'])
-            _logger.info('[auto-update] Pull OK, scheduling Odoo restart.')
+
+            new_hash = subprocess.check_output(
+                ['git', '-C', repo_dir, 'rev-parse', '--short', 'HEAD'],
+            ).decode().strip()
+            for mod in ('invoice_yearly_pdf_v13', 'invoice_yearly_pdf_v9'):
+                mf = os.path.join(repo_dir, mod, '__manifest__.py')
+                if not os.path.exists(mf):
+                    continue
+                with open(mf) as f:
+                    content = f.read()
+                content = re.sub(
+                    r"('version'\s*:\s*'[^.]+\.[^.]+\.\d+\.\d+\.)[^']*(')",
+                    lambda m: m.group(1) + new_hash + m.group(2),
+                    content,
+                )
+                with open(mf, 'w') as f:
+                    f.write(content)
+            _logger.info('[auto-update] Manifests updated to commit %s, restarting.', new_hash)
+
             subprocess.Popen(
                 ['/bin/sh', '-c', 'sleep 5 && sudo /usr/sbin/service odoo-server restart'],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 close_fds=True,
             )
         except subprocess.CalledProcessError as e:

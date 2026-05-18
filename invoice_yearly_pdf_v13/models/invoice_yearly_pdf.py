@@ -322,13 +322,20 @@ class InvoiceYearlyPdf(models.Model):
         Requires a passwordless sudoers entry for the odoo system user:
             odoo ALL=(ALL) NOPASSWD: /usr/sbin/service odoo-server restart
         """
-        # The git repo is the parent of the module directory
+        import re
         module_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         repo_dir = os.path.dirname(module_dir)
         if not os.path.isdir(os.path.join(repo_dir, '.git')):
             _logger.warning('[auto-update] %s is not a git repo, skipping.', repo_dir)
             return
         try:
+            # Reset any manifest edits from the previous run so pull never conflicts
+            for mod in ('invoice_yearly_pdf_v13', 'invoice_yearly_pdf_v9'):
+                mf = os.path.join(repo_dir, mod, '__manifest__.py')
+                if os.path.exists(mf):
+                    subprocess.run(['git', '-C', repo_dir, 'checkout', '--', mf],
+                                   capture_output=True)
+
             subprocess.run(['git', '-C', repo_dir, 'fetch', '--quiet'],
                            check=True, capture_output=True, timeout=30)
             result = subprocess.run(
@@ -337,10 +344,32 @@ class InvoiceYearlyPdf(models.Model):
             ahead = int((result.stdout or '0').strip())
             if ahead == 0:
                 return
+
             _logger.info('[auto-update] %d new commit(s) on origin, pulling...', ahead)
             subprocess.run(['git', '-C', repo_dir, 'pull', '--ff-only', '--quiet'],
                            check=True, capture_output=True, timeout=60)
-            _logger.info('[auto-update] Pull OK, scheduling Odoo restart.')
+
+            # Write the new commit hash into each manifest's version field so the
+            # Odoo Apps page shows it immediately after restart (no upgrade needed).
+            new_hash = subprocess.check_output(
+                ['git', '-C', repo_dir, 'rev-parse', '--short', 'HEAD'],
+                stderr=subprocess.DEVNULL,
+            ).decode().strip()
+            for mod in ('invoice_yearly_pdf_v13', 'invoice_yearly_pdf_v9'):
+                mf = os.path.join(repo_dir, mod, '__manifest__.py')
+                if not os.path.exists(mf):
+                    continue
+                with open(mf) as f:
+                    content = f.read()
+                content = re.sub(
+                    r"('version'\s*:\s*'[^.]+\.[^.]+\.\d+\.\d+\.)[^']*(')",
+                    lambda m: m.group(1) + new_hash + m.group(2),
+                    content,
+                )
+                with open(mf, 'w') as f:
+                    f.write(content)
+            _logger.info('[auto-update] Manifests updated to commit %s, restarting.', new_hash)
+
             # Detached so the cron transaction can commit before the service goes down
             subprocess.Popen(
                 ['/bin/sh', '-c', 'sleep 5 && sudo /usr/sbin/service odoo-server restart'],
