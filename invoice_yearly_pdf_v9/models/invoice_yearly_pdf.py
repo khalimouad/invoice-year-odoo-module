@@ -9,8 +9,7 @@ from openerp import api, fields, models
 _logger = logging.getLogger(__name__)
 
 POSTED_STATES = ('open', 'paid')
-_PROGRESS_BATCH = 10   # commit UI counter every N invoices
-_SAVE_BATCH = 50       # merge + save partial PDF every N invoices
+_RENDER_BATCH = 20     # invoices rendered in one wkhtmltopdf call (same as manual print)
 _STUCK_HOURS = 2
 
 
@@ -118,13 +117,12 @@ class InvoiceYearlyPdf(models.Model):
             ('date_invoice', '<=', date_to),
         ], order='date_invoice asc, number asc')
 
-    def _render_invoice_pdf(self, invoice):
+    def _render_batch_pdf(self, invoices):
+        """Render a recordset of invoices in one wkhtmltopdf call (identical to manual print)."""
         report_name = self.report_id.report_name if self.report_id else 'account.report_invoice'
-        # In cron context there is no HTTP request, so wkhtmltopdf cannot resolve
-        # relative URLs for CSS/fonts. Passing base_url explicitly fixes the issue.
         ICP = self.env['ir.config_parameter'].sudo()
         base_url = ICP.get_param('report.url') or ICP.get_param('web.base.url')
-        return self.env['report'].with_context(base_url=base_url).get_pdf(invoice, report_name)
+        return self.env['report'].with_context(base_url=base_url).get_pdf(invoices, report_name)
 
     @api.model
     def _merge_pdfs(self, pdf_list):
@@ -178,31 +176,37 @@ class InvoiceYearlyPdf(models.Model):
                 'processed_count': skip,
             })
 
-            pdf_batch = []
             failed = 0
+            remaining = invoices[skip:]
 
-            for i, inv in enumerate(invoices[skip:], skip + 1):
+            for batch_offset in range(0, len(remaining), _RENDER_BATCH):
+                batch = remaining[batch_offset:batch_offset + _RENDER_BATCH]
+                batch_end = skip + batch_offset + len(batch)
+
                 try:
-                    pdf_batch.append(self._render_invoice_pdf(inv))
+                    # Single wkhtmltopdf call for the whole batch — same as manual print
+                    pdf = self._render_batch_pdf(batch)
+                    batch_pdfs = [pdf]
+                    batch_failed = 0
                 except Exception as e:
-                    _logger.warning('Could not render %s: %s', inv.number, e)
-                    failed += 1
+                    _logger.warning('Batch %d-%d failed (%s), retrying one by one',
+                                    skip + batch_offset + 1, batch_end, e)
+                    batch_pdfs = []
+                    batch_failed = 0
+                    for inv in batch:
+                        try:
+                            batch_pdfs.append(self._render_batch_pdf(inv))
+                        except Exception as e2:
+                            _logger.warning('Could not render %s: %s', inv.number, e2)
+                            batch_failed += 1
+                    failed += batch_failed
 
-                # Every _SAVE_BATCH: merge existing partial + current batch → new partial
-                if len(pdf_batch) >= _SAVE_BATCH or i == total:
-                    if pdf_batch:
-                        existing = self._load_partial_bytes()
-                        merged = self._merge_pdfs(
-                            ([existing] if existing else []) + pdf_batch
-                        )
-                        self._save_partial(merged)
-                        pdf_batch = []
-                        # Commit both counters together after each partial save
-                        self._commit({'processed_count': i, 'partial_count': i})
-                        continue  # skip the progress-only commit below
+                if batch_pdfs:
+                    existing = self._load_partial_bytes()
+                    merged = self._merge_pdfs(([existing] if existing else []) + batch_pdfs)
+                    self._save_partial(merged)
 
-                if i % _PROGRESS_BATCH == 0:
-                    self._commit({'processed_count': i})
+                self._commit({'processed_count': batch_end, 'partial_count': batch_end})
 
             # The partial attachment now holds the complete merged result
             final_bytes = self._load_partial_bytes()
@@ -227,14 +231,15 @@ class InvoiceYearlyPdf(models.Model):
 
             self._delete_partial()
 
-            msg = '%d document(s) merged.' % (total - failed)
+            merged_count = total - failed
+            msg = '%d document(s) merged.' % merged_count
             if failed:
                 msg += ' %d skipped due to render errors.' % failed
 
             self._commit({
                 'state': 'done',
                 'attachment_id': attachment.id,
-                'invoice_count': total - failed,
+                'invoice_count': merged_count,
                 'processed_count': total,
                 'generated_on': fields.Datetime.now(),
                 'error_message': msg if failed else False,
