@@ -53,11 +53,18 @@
                     <field name="name"/>
                     <field name="year"/>
                     <field name="invoice_type_filter"/>
-                    <field name="invoice_count" string="# Docs"/>
-                    <field name="generated_on"/>
                     <field name="state"/>
+                    <field name="progress_pct" string="Progress"
+                           widget="progressbar"
+                           attrs="{'invisible': [('state', 'not in', ['running', 'done'])]}"/>
+                    <field name="processed_count" string="Done"
+                           attrs="{'invisible': [('state', 'not in', ['running', 'done'])]}"/>
+                    <field name="total_count" string="Total"
+                           attrs="{'invisible': [('state', 'not in', ['running', 'done'])]}"/>
+                    <field name="invoice_count" string="Merged"
+                           attrs="{'invisible': [('state', '!=', 'done')]}"/>
+                    <field name="generated_on"/>
                     <field name="attachment_id" string="Download"
-                           widget="many2one"
                            attrs="{'invisible': [('attachment_id', '=', False)]}"/>
                 </tree>
             </field>
@@ -91,6 +98,12 @@
                                 <field name="attachment_id" string="Download PDF"
                                        attrs="{'invisible': [('attachment_id', '=', False)]}"/>
                             </group>
+                        </group>
+                        <group string="Progress"
+                               attrs="{'invisible': [('state', 'not in', ['running', 'done'])]}">
+                            <field name="progress_pct" widget="progressbar" nolabel="1" colspan="2"/>
+                            <field name="processed_count" string="Processed"/>
+                            <field name="total_count" string="Total"/>
                         </group>
                         <group string="Error / Notes"
                                attrs="{'invisible': [('error_message', '=', False)]}">

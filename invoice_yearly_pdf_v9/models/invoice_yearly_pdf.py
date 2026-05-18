@@ -9,6 +9,7 @@ from openerp import api, fields, models
 _logger = logging.getLogger(__name__)
 
 POSTED_STATES = ('open', 'paid')
+_PROGRESS_BATCH = 10
 
 
 class InvoiceYearlyPdf(models.Model):
@@ -17,7 +18,6 @@ class InvoiceYearlyPdf(models.Model):
 
     name = fields.Char(string='Name', required=True)
     year = fields.Integer(string='Year', required=True)
-    # Stored so the background job knows which template and types to use
     report_id = fields.Many2one(
         'ir.actions.report.xml', string='Report Template', ondelete='set null')
     invoice_type_filter = fields.Selection([
@@ -32,9 +32,26 @@ class InvoiceYearlyPdf(models.Model):
         ('done', 'Done'),
         ('error', 'Error'),
     ], default='draft', string='State', readonly=True)
-    invoice_count = fields.Integer(string='Invoices Included', readonly=True)
-    error_message = fields.Text(string='Error', readonly=True)
+
+    # Progress tracking
+    total_count = fields.Integer(string='Total Documents', readonly=True)
+    processed_count = fields.Integer(string='Processed', readonly=True)
+    progress_pct = fields.Integer(
+        string='Progress', compute='_compute_progress_pct', store=False)
+
+    invoice_count = fields.Integer(string='Documents Merged', readonly=True)
+    error_message = fields.Text(string='Error / Notes', readonly=True)
     generated_on = fields.Datetime(string='Generated On', readonly=True)
+
+    @api.depends('processed_count', 'total_count', 'state')
+    def _compute_progress_pct(self):
+        for rec in self:
+            if rec.state == 'done':
+                rec.progress_pct = 100
+            elif rec.total_count:
+                rec.progress_pct = int(rec.processed_count * 100 / rec.total_count)
+            else:
+                rec.progress_pct = 0
 
     @api.model
     def _get_posted_invoices(self, year):
@@ -51,7 +68,6 @@ class InvoiceYearlyPdf(models.Model):
         ], order='date_invoice asc, number asc')
 
     def _render_invoice_pdf(self, invoice):
-        # Use wizard-selected template if stored, else fall back to standard
         report_name = self.report_id.report_name if self.report_id else 'account.report_invoice'
         # Odoo 9: env['report'].get_pdf() returns PDF bytes directly (not a tuple)
         return self.env['report'].get_pdf(invoice, report_name)
@@ -68,8 +84,6 @@ class InvoiceYearlyPdf(models.Model):
 
         writer = _Merger()
         for pdf_bytes in pdf_list:
-            # import_bookmarks=False avoids PdfReadError on wkhtmltopdf PDFs
-            # which contain non-standard anchors (/__WKANCHOR_x).
             try:
                 writer.append(io.BytesIO(pdf_bytes), import_bookmarks=False)
             except TypeError:
@@ -78,29 +92,44 @@ class InvoiceYearlyPdf(models.Model):
         writer.write(out)
         return out.getvalue()
 
+    def _commit(self, vals):
+        """Write vals and commit so progress is visible to other sessions."""
+        self.write(vals)
+        self.env.cr.commit()
+
     def action_generate(self, year=None):
         self.ensure_one()
         target_year = year or self.year
         try:
             invoices = self._get_posted_invoices(target_year)
             if not invoices:
-                self.write({
+                self._commit({
                     'state': 'error',
                     'error_message': 'No posted invoices found for year %d.' % target_year,
                 })
                 return False
 
+            total = len(invoices)
+            self._commit({
+                'state': 'running',
+                'total_count': total,
+                'processed_count': 0,
+            })
+
             pdf_parts = []
             failed = 0
-            for inv in invoices:
+            for i, inv in enumerate(invoices, 1):
                 try:
                     pdf_parts.append(self._render_invoice_pdf(inv))
                 except Exception as e:
                     _logger.warning('Could not render invoice %s: %s', inv.number, e)
                     failed += 1
 
+                if i % _PROGRESS_BATCH == 0 or i == total:
+                    self._commit({'processed_count': i})
+
             if not pdf_parts:
-                raise ValueError('All %d invoices failed to render.' % len(invoices))
+                raise ValueError('All %d invoices failed to render.' % total)
 
             merged_pdf = self._merge_pdfs(pdf_parts)
             doc_type = 'CreditNotes' if self.invoice_type_filter == 'out_refund' else 'Invoices'
@@ -123,10 +152,11 @@ class InvoiceYearlyPdf(models.Model):
             if failed:
                 msg += ' %d skipped due to render errors.' % failed
 
-            self.write({
+            self._commit({
                 'state': 'done',
                 'attachment_id': attachment.id,
                 'invoice_count': len(pdf_parts),
+                'processed_count': total,
                 'generated_on': fields.Datetime.now(),
                 'error_message': msg if failed else False,
             })
@@ -135,19 +165,18 @@ class InvoiceYearlyPdf(models.Model):
 
         except Exception as e:
             _logger.error('invoice.yearly.pdf [%s] failed: %s', self.name, e)
-            self.write({'state': 'error', 'error_message': str(e)})
+            self._commit({'state': 'error', 'error_message': str(e)})
             return False
 
     @api.model
     def _bg_action_generate(self, record_id):
-        """Entry point called by the one-shot background ir.cron."""
+        """Entry point called by the one-shot background ir.cron (Odoo 9)."""
         self.browse(record_id).action_generate()
 
     def action_generate_background(self):
-        """Schedule a one-shot ir.cron so generation runs outside the HTTP request."""
+        """Schedule a one-shot ir.cron to run generation outside the HTTP request."""
         self.ensure_one()
-        self.write({'state': 'running'})
-        # Odoo 9 ir.cron uses model + function + args (no code field)
+        self._commit({'state': 'running', 'total_count': 0, 'processed_count': 0})
         self.env['ir.cron'].sudo().create({
             'name': 'Generate Yearly PDF: %s' % self.name,
             'model': self._name,
