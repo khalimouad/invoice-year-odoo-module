@@ -11,6 +11,7 @@
         'security/ir.model.access.csv',
         'data/cron.xml',
         'views/wizard_views.xml',
+        'views/credit_note_wizard_views.xml',
         'views/menu.xml',
     ],
     'installable': True,

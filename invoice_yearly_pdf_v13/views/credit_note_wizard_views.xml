@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_wizard_credit_note_yearly_pdf_form" model="ir.ui.view">
+        <field name="name">wizard.credit.note.yearly.pdf.form</field>
+        <field name="model">wizard.credit.note.yearly.pdf</field>
+        <field name="arch" type="xml">
+            <form string="Generate Yearly Credit Note PDF">
+                <group>
+                    <group string="Filter">
+                        <field name="year"/>
+                    </group>
+                    <group string="Print Template">
+                        <field name="report_id"
+                               options="{'no_create': True, 'no_open': True}"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_generate_pdf"
+                            string="Generate &amp; Download PDF"
+                            type="object"
+                            class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_wizard_credit_note_yearly_pdf" model="ir.actions.act_window">
+        <field name="name">Generate Yearly Credit Note PDF</field>
+        <field name="res_model">wizard.credit.note.yearly.pdf</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

@@ -12,6 +12,12 @@
                   action="action_wizard_invoice_yearly_pdf"
                   sequence="10"/>
 
+        <menuitem id="menu_credit_note_yearly_pdf_wizard"
+                  name="Generate Credit Notes PDF for a Year"
+                  parent="menu_invoice_yearly_pdf_root"
+                  action="action_wizard_credit_note_yearly_pdf"
+                  sequence="15"/>
+
         <menuitem id="menu_invoice_yearly_pdf_history"
                   name="Generated PDFs History"
                   parent="menu_invoice_yearly_pdf_root"

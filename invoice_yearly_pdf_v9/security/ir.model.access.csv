@@ -2,3 +2,4 @@ id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_invoice_yearly_pdf_manager,invoice.yearly.pdf manager,model_invoice_yearly_pdf,account.group_account_manager,1,1,1,1
 access_invoice_yearly_pdf_user,invoice.yearly.pdf user,model_invoice_yearly_pdf,account.group_account_invoice,1,0,0,0
 access_wizard_invoice_yearly_pdf,wizard.invoice.yearly.pdf,model_wizard_invoice_yearly_pdf,account.group_account_invoice,1,1,1,1
+access_wizard_credit_note_yearly_pdf,wizard.credit.note.yearly.pdf,model_wizard_credit_note_yearly_pdf,account.group_account_invoice,1,1,1,1
