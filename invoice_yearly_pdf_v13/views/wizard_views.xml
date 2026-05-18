@@ -44,9 +44,11 @@
         <field name="model">invoice.yearly.pdf</field>
         <field name="arch" type="xml">
             <tree string="Generated PDFs"
-                  decoration-info="state == 'running'"
+                  decoration-warning="is_stuck"
+                  decoration-info="state == 'running' and not is_stuck"
                   decoration-danger="state == 'error'"
                   decoration-success="state == 'done'">
+                <field name="is_stuck" invisible="1"/>
                 <field name="name"/>
                 <field name="year"/>
                 <field name="invoice_type_filter"/>
@@ -60,7 +62,8 @@
                        attrs="{'invisible': [('state', 'not in', ['running', 'done'])]}"/>
                 <field name="invoice_count" string="Merged"
                        attrs="{'invisible': [('state', '!=', 'done')]}"/>
-                <field name="generated_on"/>
+                <field name="started_on" string="Started"/>
+                <field name="generated_on" string="Finished"/>
                 <field name="attachment_id" string="Download"
                        attrs="{'invisible': [('attachment_id', '=', False)]}"/>
             </tree>
@@ -78,10 +81,25 @@
                             type="object"
                             class="btn-primary"
                             attrs="{'invisible': [('state', 'in', ('draft', 'running'))]}"/>
+                    <button name="action_reset"
+                            string="Reset"
+                            type="object"
+                            class="btn-warning"
+                            attrs="{'invisible': [('state', 'not in', ('running', 'error'))]}"/>
                     <field name="state" widget="statusbar"
                            statusbar_visible="draft,running,done,error"/>
                 </header>
                 <sheet>
+                    <!-- Stuck warning banner -->
+                    <div class="alert alert-warning"
+                         attrs="{'invisible': [('is_stuck', '=', False)]}">
+                        <strong>This job appears stuck.</strong>
+                        The Odoo worker was likely killed by resource limits
+                        (limit_time_cpu / limit_memory_hard). Click
+                        <strong>Reset</strong> to clear it, then re-queue or
+                        contact your system administrator to raise worker limits.
+                    </div>
+                    <field name="is_stuck" invisible="1"/>
                     <group>
                         <group string="Settings">
                             <field name="name"/>
@@ -91,6 +109,7 @@
                         </group>
                         <group string="Result">
                             <field name="invoice_count" string="Documents merged"/>
+                            <field name="started_on"/>
                             <field name="generated_on"/>
                             <field name="attachment_id" string="Download PDF"
                                    attrs="{'invisible': [('attachment_id', '=', False)]}"/>

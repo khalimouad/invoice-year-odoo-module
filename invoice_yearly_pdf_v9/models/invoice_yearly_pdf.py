@@ -2,7 +2,7 @@
 import base64
 import io
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 from openerp import api, fields, models
 
@@ -10,6 +10,7 @@ _logger = logging.getLogger(__name__)
 
 POSTED_STATES = ('open', 'paid')
 _PROGRESS_BATCH = 10
+_STUCK_HOURS = 2
 
 
 class InvoiceYearlyPdf(models.Model):
@@ -34,17 +35,21 @@ class InvoiceYearlyPdf(models.Model):
     ], default='draft', string='State', readonly=True)
 
     # Progress tracking
+    started_on = fields.Datetime(string='Started On', readonly=True)
     total_count = fields.Integer(string='Total Documents', readonly=True)
     processed_count = fields.Integer(string='Processed', readonly=True)
     progress_pct = fields.Integer(
         string='Progress', compute='_compute_progress_pct', store=False)
+    is_stuck = fields.Boolean(
+        string='Stuck?', compute='_compute_progress_pct', store=False)
 
     invoice_count = fields.Integer(string='Documents Merged', readonly=True)
     error_message = fields.Text(string='Error / Notes', readonly=True)
     generated_on = fields.Datetime(string='Generated On', readonly=True)
 
-    @api.depends('processed_count', 'total_count', 'state')
+    @api.depends('processed_count', 'total_count', 'state', 'started_on')
     def _compute_progress_pct(self):
+        stuck_threshold = fields.Datetime.now() - timedelta(hours=_STUCK_HOURS)
         for rec in self:
             if rec.state == 'done':
                 rec.progress_pct = 100
@@ -52,6 +57,11 @@ class InvoiceYearlyPdf(models.Model):
                 rec.progress_pct = int(rec.processed_count * 100 / rec.total_count)
             else:
                 rec.progress_pct = 0
+            rec.is_stuck = (
+                rec.state == 'running'
+                and rec.started_on
+                and rec.started_on < stuck_threshold
+            )
 
     @api.model
     def _get_posted_invoices(self, year):
@@ -112,6 +122,7 @@ class InvoiceYearlyPdf(models.Model):
             total = len(invoices)
             self._commit({
                 'state': 'running',
+                'started_on': fields.Datetime.now(),
                 'total_count': total,
                 'processed_count': 0,
             })
@@ -168,6 +179,39 @@ class InvoiceYearlyPdf(models.Model):
             self._commit({'state': 'error', 'error_message': str(e)})
             return False
 
+    def action_reset(self):
+        """Reset a stuck/errored record back to draft so it can be re-queued."""
+        self.ensure_one()
+        self._commit({
+            'state': 'draft',
+            'total_count': 0,
+            'processed_count': 0,
+            'started_on': False,
+            'error_message': False,
+        })
+
+    @api.model
+    def cron_reset_stuck_jobs(self):
+        """Called by the watchdog cron. Marks jobs stuck >_STUCK_HOURS as error."""
+        threshold = fields.Datetime.now() - timedelta(hours=_STUCK_HOURS)
+        stuck = self.search([
+            ('state', '=', 'running'),
+            ('started_on', '<', threshold),
+        ])
+        for rec in stuck:
+            _logger.warning(
+                'invoice.yearly.pdf [%s] stuck since %s — marking as error.',
+                rec.name, rec.started_on,
+            )
+            rec._commit({
+                'state': 'error',
+                'error_message': (
+                    'Job timed out after %d hours — the Odoo worker process was likely '
+                    'killed by system resource limits (limit_time_cpu or limit_memory_hard). '
+                    'Click Reset then re-queue, or split into smaller batches.' % _STUCK_HOURS
+                ),
+            })
+
     @api.model
     def _bg_action_generate(self, record_id):
         """Entry point called by the one-shot background ir.cron (Odoo 9)."""
@@ -176,7 +220,12 @@ class InvoiceYearlyPdf(models.Model):
     def action_generate_background(self):
         """Schedule a one-shot ir.cron to run generation outside the HTTP request."""
         self.ensure_one()
-        self._commit({'state': 'running', 'total_count': 0, 'processed_count': 0})
+        self._commit({
+            'state': 'running',
+            'started_on': fields.Datetime.now(),
+            'total_count': 0,
+            'processed_count': 0,
+        })
         self.env['ir.cron'].sudo().create({
             'name': 'Generate Yearly PDF: %s' % self.name,
             'model': self._name,
