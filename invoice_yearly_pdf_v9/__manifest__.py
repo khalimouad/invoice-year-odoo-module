@@ -2,7 +2,7 @@
 {
     'name': 'Invoice Yearly PDF Export (Odoo 9)',
     'version': '9.0.1.0.0',
-    'summary': 'Generate a merged PDF of all posted invoices for a chosen year — Odoo 9',
+    'summary': 'Fix CSS in background PDFs (local base_url) + auto-update cron from Git',
     'author': 'Custom',
     'category': 'Accounting',
     'license': 'LGPL-3',
