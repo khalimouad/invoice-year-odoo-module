@@ -2,6 +2,8 @@
 import base64
 import io
 import logging
+import os
+import subprocess
 from datetime import date, timedelta
 
 from openerp import api, fields, models
@@ -309,6 +311,38 @@ class InvoiceYearlyPdf(models.Model):
             'active': True,
             'user_id': self.env.uid,
         })
+
+    @api.model
+    def cron_auto_update(self):
+        """Pull latest commits from origin and restart Odoo if anything changed.
+
+        Requires a passwordless sudoers entry for the odoo system user:
+            odoo ALL=(ALL) NOPASSWD: /usr/sbin/service odoo-server restart
+        """
+        module_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        repo_dir = os.path.dirname(module_dir)
+        if not os.path.isdir(os.path.join(repo_dir, '.git')):
+            _logger.warning('[auto-update] %s is not a git repo, skipping.', repo_dir)
+            return
+        try:
+            subprocess.check_call(['git', '-C', repo_dir, 'fetch', '--quiet'])
+            ahead = int(subprocess.check_output(
+                ['git', '-C', repo_dir, 'rev-list', '--count', 'HEAD..@{u}']
+            ).strip() or '0')
+            if ahead == 0:
+                return
+            _logger.info('[auto-update] %d new commit(s) on origin, pulling...', ahead)
+            subprocess.check_call(['git', '-C', repo_dir, 'pull', '--ff-only', '--quiet'])
+            _logger.info('[auto-update] Pull OK, scheduling Odoo restart.')
+            subprocess.Popen(
+                ['/bin/sh', '-c', 'sleep 5 && sudo /usr/sbin/service odoo-server restart'],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                close_fds=True,
+            )
+        except subprocess.CalledProcessError as e:
+            _logger.warning('[auto-update] git command failed: %s', e)
+        except Exception as e:
+            _logger.warning('[auto-update] failed: %s', e)
 
     @api.model
     def cron_generate_yearly_pdf(self):

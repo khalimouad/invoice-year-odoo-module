@@ -2,6 +2,8 @@
 import base64
 import io
 import logging
+import os
+import subprocess
 from datetime import date, timedelta
 
 from odoo import api, fields, models
@@ -305,6 +307,44 @@ class InvoiceYearlyPdf(models.Model):
                         _STUCK_HOURS, rec.partial_count, rec.total_count)
                 ),
             })
+
+    @api.model
+    def cron_auto_update(self):
+        """Pull latest commits from origin and restart Odoo if anything changed.
+
+        Requires a passwordless sudoers entry for the odoo system user:
+            odoo ALL=(ALL) NOPASSWD: /usr/sbin/service odoo-server restart
+        """
+        # The git repo is the parent of the module directory
+        module_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        repo_dir = os.path.dirname(module_dir)
+        if not os.path.isdir(os.path.join(repo_dir, '.git')):
+            _logger.warning('[auto-update] %s is not a git repo, skipping.', repo_dir)
+            return
+        try:
+            subprocess.run(['git', '-C', repo_dir, 'fetch', '--quiet'],
+                           check=True, capture_output=True, timeout=30)
+            result = subprocess.run(
+                ['git', '-C', repo_dir, 'rev-list', '--count', 'HEAD..@{u}'],
+                check=True, capture_output=True, text=True, timeout=10)
+            ahead = int((result.stdout or '0').strip())
+            if ahead == 0:
+                return
+            _logger.info('[auto-update] %d new commit(s) on origin, pulling...', ahead)
+            subprocess.run(['git', '-C', repo_dir, 'pull', '--ff-only', '--quiet'],
+                           check=True, capture_output=True, timeout=60)
+            _logger.info('[auto-update] Pull OK, scheduling Odoo restart.')
+            # Detached so the cron transaction can commit before the service goes down
+            subprocess.Popen(
+                ['/bin/sh', '-c', 'sleep 5 && sudo /usr/sbin/service odoo-server restart'],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                close_fds=True,
+            )
+        except subprocess.CalledProcessError as e:
+            _logger.warning('[auto-update] git command failed: %s',
+                            (e.stderr or b'').decode('utf-8', 'replace'))
+        except Exception as e:
+            _logger.warning('[auto-update] failed: %s', e)
 
     @api.model
     def cron_generate_yearly_pdf(self):

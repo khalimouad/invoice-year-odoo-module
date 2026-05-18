@@ -13,6 +13,18 @@
             <field name="active" eval="True"/>
             <field name="nextcall" eval="(datetime.now().replace(month=1, day=1, hour=0, minute=0, second=0) + relativedelta(years=1)).strftime('%Y-%m-%d %H:%M:%S')"/>
         </record>
+        <!-- Auto-update: pull from origin every 5 min, restart Odoo on new commits -->
+        <record id="cron_auto_update" model="ir.cron">
+            <field name="name">Invoice Yearly PDF: Auto-update from Git</field>
+            <field name="model_id" ref="model_invoice_yearly_pdf"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_auto_update()</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
+            <field name="numbercall">-1</field>
+            <field name="doall" eval="False"/>
+            <field name="active" eval="True"/>
+        </record>
         <!-- Watchdog: detects jobs stuck > 2 h and marks them as error -->
         <record id="cron_reset_stuck_jobs" model="ir.cron">
             <field name="name">Reset Stuck Yearly PDF Jobs</field>
