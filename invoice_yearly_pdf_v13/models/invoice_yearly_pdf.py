@@ -119,8 +119,11 @@ class InvoiceYearlyPdf(models.Model):
 
     def _render_invoice_pdf(self, invoice):
         report = self.report_id or self.env.ref('account.account_invoices')
-        # Odoo 13: render_qweb_pdf (renamed _render_qweb_pdf in v16)
-        pdf, _ct = report.render_qweb_pdf(invoice.ids)
+        # In cron context there is no HTTP request, so wkhtmltopdf cannot resolve
+        # relative URLs for CSS/fonts. Passing base_url explicitly fixes the issue.
+        ICP = self.env['ir.config_parameter'].sudo()
+        base_url = ICP.get_param('report.url') or ICP.get_param('web.base.url')
+        pdf, _ct = report.with_context(base_url=base_url).render_qweb_pdf(invoice.ids)
         return pdf
 
     @api.model

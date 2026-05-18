@@ -120,8 +120,11 @@ class InvoiceYearlyPdf(models.Model):
 
     def _render_invoice_pdf(self, invoice):
         report_name = self.report_id.report_name if self.report_id else 'account.report_invoice'
-        # Odoo 9: env['report'].get_pdf() returns PDF bytes directly (not a tuple)
-        return self.env['report'].get_pdf(invoice, report_name)
+        # In cron context there is no HTTP request, so wkhtmltopdf cannot resolve
+        # relative URLs for CSS/fonts. Passing base_url explicitly fixes the issue.
+        ICP = self.env['ir.config_parameter'].sudo()
+        base_url = ICP.get_param('report.url') or ICP.get_param('web.base.url')
+        return self.env['report'].with_context(base_url=base_url).get_pdf(invoice, report_name)
 
     @api.model
     def _merge_pdfs(self, pdf_list):
