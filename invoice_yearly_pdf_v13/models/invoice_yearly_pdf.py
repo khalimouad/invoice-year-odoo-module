@@ -47,17 +47,14 @@ class InvoiceYearlyPdf(models.Model):
     @api.model
     def _merge_pdfs(self, pdf_list):
         try:
-            from pypdf import PdfWriter
+            from pypdf import PdfWriter as _Merger        # pypdf (modern rename)
         except ImportError:
-            from PyPDF2 import PdfMerger as PdfWriter
-            writer = PdfWriter()
-            for pdf_bytes in pdf_list:
-                writer.append(io.BytesIO(pdf_bytes))
-            out = io.BytesIO()
-            writer.write(out)
-            return out.getvalue()
+            try:
+                from PyPDF2 import PdfMerger as _Merger  # PyPDF2 >= 2.0
+            except ImportError:
+                from PyPDF2 import PdfFileMerger as _Merger  # PyPDF2 1.x
 
-        writer = PdfWriter()
+        writer = _Merger()
         for pdf_bytes in pdf_list:
             writer.append(io.BytesIO(pdf_bytes))
         out = io.BytesIO()
