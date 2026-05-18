@@ -41,7 +41,7 @@ class InvoiceYearlyPdf(models.Model):
     def _render_invoice_pdf(self, invoice):
         # Odoo 13: public method is `render_qweb_pdf` (got `_` prefix in v16)
         report = self.env.ref('account.account_invoices')
-        pdf, _ = report.render_qweb_pdf(invoice.ids)
+        pdf, _ct = report.render_qweb_pdf(invoice.ids)
         return pdf
 
     @api.model

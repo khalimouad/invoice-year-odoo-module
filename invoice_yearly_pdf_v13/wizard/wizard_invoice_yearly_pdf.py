@@ -123,5 +123,5 @@ class WizardInvoiceYearlyPdf(models.TransientModel):
 
     def _render_pdf(self, invoice):
         # Odoo 13: public method is `render_qweb_pdf` (got `_` prefix in v16)
-        pdf, _ = self.report_id.render_qweb_pdf(invoice.ids)
+        pdf, _ct = self.report_id.render_qweb_pdf(invoice.ids)
         return pdf
