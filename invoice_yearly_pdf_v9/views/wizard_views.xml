@@ -93,7 +93,7 @@
         <record id="action_invoice_yearly_pdf" model="ir.actions.act_window">
             <field name="name">Yearly Invoice PDFs</field>
             <field name="res_model">invoice.yearly.pdf</field>
-            <field name="view_type">list</field>
+            <field name="view_type">form</field>
             <field name="view_mode">tree,form</field>
         </record>
 

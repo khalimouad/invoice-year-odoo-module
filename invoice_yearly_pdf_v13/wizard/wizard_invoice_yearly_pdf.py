@@ -33,10 +33,15 @@ class WizardInvoiceYearlyPdf(models.TransientModel):
     @api.model
     def default_get(self, fields_list):
         res = super().default_get(fields_list)
-        # Pre-select the standard invoice report if it exists
-        default_report = self.env['ir.actions.report'].search([
-            ('report_name', '=', 'account.report_invoice'),
-        ], limit=1)
+        # Pre-select the standard invoice report.
+        # In Odoo 13 the XML id is `account.account_invoices`
+        # (its `report_name` is `account.report_invoice`).
+        default_report = self.env.ref('account.account_invoices', raise_if_not_found=False)
+        if not default_report:
+            default_report = self.env['ir.actions.report'].search([
+                ('model', '=', 'account.move'),
+                ('report_type', 'like', 'qweb'),
+            ], limit=1)
         if default_report:
             res['report_id'] = default_report.id
         return res
@@ -108,13 +113,15 @@ class WizardInvoiceYearlyPdf(models.TransientModel):
         date_from = date(self.year, 1, 1)
         date_to = date(self.year, 12, 31)
         types = ('out_invoice', 'out_refund') if self.invoice_type == 'both' else (self.invoice_type,)
+        # Odoo 13: account.move field is `type` (renamed to `move_type` in v14)
         return self.env['account.move'].search([
-            ('move_type', 'in', types),
+            ('type', 'in', types),
             ('state', '=', 'posted'),
             ('invoice_date', '>=', date_from),
             ('invoice_date', '<=', date_to),
         ], order='invoice_date asc, name asc')
 
     def _render_pdf(self, invoice):
-        pdf, _ = self.report_id._render_qweb_pdf(invoice.ids)
+        # Odoo 13: public method is `render_qweb_pdf` (got `_` prefix in v16)
+        pdf, _ = self.report_id.render_qweb_pdf(invoice.ids)
         return pdf

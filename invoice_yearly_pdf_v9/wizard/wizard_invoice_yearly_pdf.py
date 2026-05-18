@@ -39,11 +39,14 @@ class WizardInvoiceYearlyPdf(models.TransientModel):
     @api.model
     def default_get(self, fields_list):
         res = super(WizardInvoiceYearlyPdf, self).default_get(fields_list)
-        # Pre-select the standard invoice with payments report if it exists
-        default_report = self.env['ir.actions.report.xml'].search([
-            ('report_name', 'like', 'account.report_invoice'),
-            ('model', '=', 'account.invoice'),
-        ], limit=1)
+        # In Odoo 9 the canonical invoice report XML id is `account.account_invoices`
+        # (its `report_name` is `account.report_invoice`).
+        default_report = self.env.ref('account.account_invoices', raise_if_not_found=False)
+        if not default_report:
+            default_report = self.env['ir.actions.report.xml'].search([
+                ('model', '=', 'account.invoice'),
+                ('report_type', 'like', 'qweb'),
+            ], limit=1)
         if default_report:
             res['report_id'] = default_report.id
         return res
@@ -125,6 +128,5 @@ class WizardInvoiceYearlyPdf(models.TransientModel):
         ], order='date_invoice asc, number asc')
 
     def _render_pdf(self, invoice):
-        # Odoo 9 uses env['report'].get_pdf with the report_name string
-        pdf, _ = self.env['report'].get_pdf(invoice, self.report_id.report_name)
-        return pdf
+        # Odoo 9: env['report'].get_pdf returns PDF bytes directly (NOT a tuple)
+        return self.env['report'].get_pdf(invoice, self.report_id.report_name)

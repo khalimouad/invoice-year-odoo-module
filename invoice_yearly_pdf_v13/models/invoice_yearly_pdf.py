@@ -29,8 +29,9 @@ class InvoiceYearlyPdf(models.Model):
     def _get_posted_invoices(self, year):
         date_from = date(year, 1, 1)
         date_to = date(year, 12, 31)
+        # Odoo 13: account.move field is `type` (renamed to `move_type` in v14)
         return self.env['account.move'].search([
-            ('move_type', 'in', ('out_invoice', 'out_refund')),
+            ('type', 'in', ('out_invoice', 'out_refund')),
             ('state', '=', 'posted'),
             ('invoice_date', '>=', date_from),
             ('invoice_date', '<=', date_to),
@@ -38,8 +39,9 @@ class InvoiceYearlyPdf(models.Model):
 
     @api.model
     def _render_invoice_pdf(self, invoice):
-        report = self.env.ref('account.report_invoice')
-        pdf, _ = report._render_qweb_pdf(invoice.ids)
+        # Odoo 13: public method is `render_qweb_pdf` (got `_` prefix in v16)
+        report = self.env.ref('account.account_invoices')
+        pdf, _ = report.render_qweb_pdf(invoice.ids)
         return pdf
 
     @api.model

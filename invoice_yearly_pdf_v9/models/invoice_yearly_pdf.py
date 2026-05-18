@@ -43,14 +43,10 @@ class InvoiceYearlyPdf(models.Model):
 
     @api.model
     def _render_invoice_pdf(self, invoice):
-        # Odoo 9 uses the report service; try both common report refs
-        for ref in ('account.report_invoice_with_payments', 'account.report_invoice'):
-            try:
-                pdf, _ = self.env['report'].get_pdf(invoice, ref)
-                return pdf
-            except Exception:
-                continue
-        raise ValueError('Could not find a valid invoice report reference.')
+        # Odoo 9: env['report'].get_pdf(records, report_name)
+        # `account.report_invoice` is the report_name of the standard invoice template
+        # (its XML id is `account.account_invoices`).
+        return self.env['report'].get_pdf(invoice, 'account.report_invoice')
 
     @api.model
     def _merge_pdfs(self, pdf_list):

@@ -3,7 +3,7 @@
     <data>
         <menuitem id="menu_invoice_yearly_pdf_root"
                   name="Yearly PDF Export"
-                  parent="account.menu_account_all_invoices"
+                  parent="account.menu_finance"
                   sequence="99"/>
 
         <menuitem id="menu_invoice_yearly_pdf_wizard"
