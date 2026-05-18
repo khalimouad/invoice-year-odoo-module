@@ -6,8 +6,8 @@
             <field name="model">invoice.yearly.pdf</field>
             <field name="function">cron_generate_yearly_pdf</field>
             <field name="args">()</field>
-            <field name="interval_number">1</field>
-            <field name="interval_type">years</field>
+            <field name="interval_number">12</field>
+            <field name="interval_type">months</field>
             <field name="numbercall">-1</field>
             <field name="doall" eval="False"/>
             <field name="active" eval="True"/>
